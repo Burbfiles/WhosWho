@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Who's Who - Wait Staff Only</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 2rem; max-width: 1200px; margin: auto; }
+    h1 { text-align: center; }
+    .section { margin-top: 2rem; }
+    .columns { display: flex; gap: 2rem; margin-bottom: 1rem; flex-wrap: wrap; }
+    .single-column { display: flex; flex-direction: column; gap: 1rem; }
+    .label { font-weight: bold; }
+    .box { border-bottom: 1px solid #000; padding: 0.2rem 0; min-width: 200px; }
+    .staff-list { column-count: 3; column-gap: 2rem; }
+    .staff-list div { break-inside: avoid; margin-bottom: 0.5rem; }
+  </style>
+</head>
+<body>
+  <h1>Who's Who</h1>
+  <input type="file" id="csvFileInput" accept=".csv">
+  <select id="daySelect"><option value="">Select a Day</option></select>
+
+  <div class="section columns">
+    <div class="single-column">
+      <div><div class="label">Day:</div><div class="box" id="dateBox"></div></div>
+      <div><div class="label">Closing Manager:</div><div class="box"></div></div>
+      <div><div class="label">Manager Day Off:</div><div class="box"></div></div>
+      <div><div class="label">Shirt Shack</div><div id="shirtShack" class="box"></div></div>
+      <div><div class="label">Food Runner</div><div id="foodRunner" class="box"></div></div>
+    </div>
+    <div class="single-column">
+      <div><div class="label">Caboose</div><div id="caboose" class="box"></div></div>
+      <div><div class="label">Steamer</div><div id="steamer" class="box"></div></div>
+    </div>
+    <div class="single-column">
+      <div><div class="label">Bar</div><div id="bar" class="box"></div></div>
+    </div>
+    <div class="single-column">
+      <div><div class="label">Helm</div><div id="helm" class="box"></div></div>
+      <div><div class="label">Host</div><div id="host" class="box"></div></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Wait Staff</h2>
+    <div id="waitStaffList" class="staff-list"></div>
+  </div>
+
+  <div class="section">
+    <h2>Sneaky Pete's</h2>
+    <div class="columns">
+      <div class="single-column">
+        <div><div class="label">Bar</div><div id="snBar" class="box"></div></div>
+        <div><div class="label">Host</div><div id="snHost" class="box"></div></div>
+      </div>
+      <div class="single-column">
+        <div><div class="label">Bus</div><div id="snBus" class="box"></div></div>
+        <div><div class="label">Expo</div><div id="snExpo" class="box"></div></div>
+      </div>
+      <div class="single-column">
+        <div><div class="label">Kitchen</div><div id="snKitchen" class="box"></div></div>
+      </div>
+      <div class="single-column">
+        <div><div class="label">Server</div><div id="snServer" class="box"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function parseShift(entry) {
+      if (!entry) return [];
+      const parts = entry.split('|').map(p => p.trim());
+      const parsed = [];
+      for (const part of parts) {
+        if (!part.includes('Server') || part.includes('Sn Server')) continue;
+        const timePart = part.split('-')[0].trim();
+        parsed.push(timePart);
+      }
+      return parsed;
+    }
+
+    function getTime(shift) {
+      return shift.split('-')[0].trim();
+    }
+
+    function matchesRole(shift, keyword) {
+      return shift.toLowerCase().includes(keyword);
+    }
+
+    function timeToMinutes(timeStr) {
+      const match = timeStr.match(/(\d{1,2})(:(\d{2}))?(am|pm)/i);
+      if (!match) return 0;
+      let hour = parseInt(match[1], 10);
+      const minute = match[3] ? parseInt(match[3], 10) : 0;
+      const meridiem = match[4].toLowerCase();
+      if (meridiem === 'pm' && hour !== 12) hour += 12;
+      if (meridiem === 'am' && hour === 12) hour = 0;
+      return hour * 60 + minute;
+    }
+
+    let allRows = [];
+    let rawHeaders = [];
+
+    document.getElementById('csvFileInput').addEventListener('change', function(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(event) {
+        const csvText = event.target.result;
+        const lines = csvText.split(/\r?\n/).filter(line => line.trim() !== "");
+
+        rawHeaders = lines[0].replace(/^\uFEFF/, '').split(',').map(h => h.trim().toLowerCase());
+        allRows = lines.slice(1).map(line => line.split(',').map(cell => cell.replace(/"/g, '').trim()));
+
+        const daySelect = document.getElementById('daySelect');
+        daySelect.innerHTML = '<option value="">Select a Day</option>';
+
+        rawHeaders.forEach(header => {
+          if (!header.includes('name') && !header.includes('payable hours')) {
+            const option = document.createElement('option');
+            option.value = header;
+            option.textContent = header.charAt(0).toUpperCase() + header.slice(1);
+            daySelect.appendChild(option);
+          }
+        });
+      };
+      reader.readAsText(file);
+    });
+
+    document.getElementById('daySelect').addEventListener('change', function() {
+      const selectedDay = this.value;
+      if (!selectedDay) return;
+
+      document.getElementById('dateBox').textContent = selectedDay.toUpperCase();
+
+      const nameIndex = rawHeaders.findIndex(h => h.includes("name"));
+      const dayIndex = rawHeaders.findIndex(h => h === selectedDay);
+
+      const staffList = [];
+      const roles = {
+        shirtShack: [], foodRunner: [], caboose: [], steamer: [], bar: [], helm: [], host: [],
+        snBar: [], snHost: [], snBus: [], snExpo: [], snKitchen: [], snServer: []
+      };
+
+      for (const row of allRows) {
+        if (row.length <= Math.max(nameIndex, dayIndex)) continue;
+
+        let name = row[nameIndex];
+        let empNum = "";
+        if (!name) continue;
+
+        if (name.includes('#')) {
+          const parts = name.split('#');
+          name = parts[0].trim();
+          empNum = parts[1].trim();
+        }
+
+        const shift = row[dayIndex];
+        if (!shift) continue;
+
+        const time = getTime(shift);
+
+        if (matchesRole(shift, 'shirt shack')) roles.shirtShack.push(`${name} ${empNum ? '(' + empNum + ')' : ''} ${time}`);
+        else if (matchesRole(shift, 'food runner')) roles.foodRunner.push(`${name} ${empNum ? '(' + empNum + ')' : ''} ${time}`);
+        else if (matchesRole(shift, 'caboose')) roles.caboose.push(`${name} ${empNum ? '(' + empNum + ')' : ''} ${time}`);
+        else if (matchesRole(shift, 'steamer')) roles.steamer.push(`${name} ${empNum ? '(' + empNum + ')' : ''} ${time}`);
+        else if (matchesRole(shift, 'hoopers bar')) roles.bar.push(`${name} ${empNum ? '(' + empNum + ')' : ''} ${time}`);
+        else if (matchesRole(shift, 'helm')) roles.helm.push(`${name} ${empNum ? '(' + empNum + ')' : ''} ${time}`);
+        else if (matchesRole(shift, 'host')) roles.host.push(`${name} ${empNum ? '(' + empNum + ')' : ''} ${time}`);
+        else if (matchesRole(shift, 'sn bar')) roles.snBar.push(`${name} ${empNum ? '(' + empNum + ')' : ''} ${time}`);
+        else if (matchesRole(shift, 'sn host')) roles.snHost.push(`${name} ${empNum ? '(' + empNum + ')' : ''} ${time}`);
+        else if (matchesRole(shift, 'sn bus')) roles.snBus.push(`${name} ${empNum ? '(' + empNum + ')' : ''} ${time}`);
+        else if (matchesRole(shift, 'sn expo')) roles.snExpo.push(`${name} ${empNum ? '(' + empNum + ')' : ''} ${time}`);
+        else if (matchesRole(shift, "sneaky's kitchen")) roles.snKitchen.push(`${name} ${empNum ? '(' + empNum + ')' : ''} ${time}`);
+        else if (matchesRole(shift, 'sn server')) roles.snServer.push(`${name} ${empNum ? '(' + empNum + ')' : ''} ${time}`);
+        else {
+          const times = parseShift(shift);
+          for (const t of times) {
+            staffList.push({ name, empNum, time: t });
+          }
+        }
+      }
+
+      staffList.sort((a, b) => timeToMinutes(a.time) - timeToMinutes(b.time));
+      Object.keys(roles).forEach(key => roles[key].sort((a, b) => timeToMinutes(a.split(' ').slice(-1)[0]) - timeToMinutes(b.split(' ').slice(-1)[0])));
+
+      document.getElementById('waitStaffList').innerHTML = staffList.length
+        ? staffList.map(item => `<div>${item.name} ${item.empNum ? '(' + item.empNum + ')' : ''} ${item.time}</div>`).join('')
+        : "<div>No wait staff found for this day.</div>";
+
+      Object.entries(roles).forEach(([key, value]) => {
+        const el = document.getElementById(key);
+        if (el) {
+          el.innerHTML = value.length ? value.map(person => `<div>${person}</div>`).join('') : `No ${key} assigned.`;
+        }
+      });
+    });
+  </script>
+</body>
+</html>
